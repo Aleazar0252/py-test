@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultra Anime Rasengan AR</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: sans-serif;
+            color: white;
+        }
+        .container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        /* The video is hidden; we only use it to feed the canvas */
+        .input_video {
+            display: none;
+        }
+        /* The canvas fills the screen */
+        .output_canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror the camera */
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            text-shadow: 0 0 10px cyan;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="loading" id="loadingText">Manifesting Chakra... Please allow camera access.</div>
+    <video class="input_video" autoplay playsinline></video>
+    <canvas class="output_canvas" width="1280" height="720"></canvas>
+</div>
+
+<script>
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const canvasCtx = canvasElement.getContext('2d');
+    const loadingText = document.getElementById('loadingText');
+
+    // --- Physics & Particle Classes ---
+    class OrbitalStream {
+        constructor() {
+            this.angle = Math.random() * Math.PI * 2;
+            this.phase = Math.random() * Math.PI * 2;
+            this.speedAngle = (Math.random() * 0.2 + 0.1) * (Math.random() < 0.5 ? 1 : -1);
+            this.speedPhase = Math.random() * 0.1 + 0.05;
+            this.depthRatio = Math.random() * 0.7 + 0.3;
+            this.color = `rgb(255, ${Math.floor(Math.random() * 55 + 200)}, ${Math.floor(Math.random() * 105 + 150)})`;
+            this.thickness = Math.floor(Math.random() * 3) + 1;
+        }
+
+        draw(ctx, centerX, centerY, maxRadius) {
+            this.angle += this.speedAngle;
+            this.phase += this.speedPhase;
+
+            const r = Math.max(2, maxRadius * this.depthRatio);
+            const majorAxis = r;
+            const minorAxis = Math.max(1, r * Math.abs(Math.sin(this.phase)));
+
+            ctx.beginPath();
+            ctx.ellipse(centerX, centerY, majorAxis, minorAxis, this.angle, 0, Math.PI * (Math.random() * 0.5 + 0.5));
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = this.thickness;
+            ctx.stroke();
+        }
+    }
+
+    class ChakraSpark {
+        constructor(centerX, centerY, radius) {
+            this.reset(centerX, centerY, radius);
+        }
+        reset(centerX, centerY, radius) {
+            const angle = Math.random() * Math.PI * 2;
+            this.x = centerX + Math.cos(angle) * (radius * 0.9);
+            this.y = centerY + Math.sin(angle) * (radius * 0.9);
+            this.vx = Math.cos(angle) * (Math.random() * 4 + 2) - Math.sin(angle) * (Math.random() * 3 + 2);
+            this.vy = Math.sin(angle) * (Math.random() * 4 + 2) + Math.cos(angle) * (Math.random() * 3 + 2);
+            this.life = 255;
+            this.decay = Math.random() * 15 + 10;
+            this.size = Math.random() * 3 + 1;
+        }
+        updateAndDraw(ctx, centerX, centerY, radius) {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.life -= this.decay;
+
+            if (this.life > 0) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 220, 255, ${this.life / 255})`;
+                ctx.fill();
+            } else {
+                this.reset(centerX, centerY, radius);
+            }
+        }
+    }
+
+    const streams = Array.from({ length: 60 }, () => new OrbitalStream());
+    const sparks = [];
+    let globalTime = 0;
+
+    // --- Main Rendering Loop ---
+    function onResults(results) {
+        if (loadingText.style.display !== 'none') loadingText.style.display = 'none';
+
+        canvasCtx.save();
+        // Clear canvas
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+        // Draw the webcam feed normally
+        canvasCtx.globalCompositeOperation = 'source-over';
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+        // Turn on Additive Blending for the Chakra
+        canvasCtx.globalCompositeOperation = 'lighter';
+
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            for (const landmarks of results.multiHandLandmarks) {
+                const w = canvasElement.width;
+                const h = canvasElement.height;
+
+                const wrist = landmarks[0];
+                const middleMcp = landmarks[9];
+
+                const wristPos = { x: wrist.x * w, y: wrist.y * h };
+                const middlePos = { x: middleMcp.x * w, y: middleMcp.y * h };
+
+                const palmCenter = {
+                    x: (wristPos.x + middlePos.x) / 2,
+                    y: (wristPos.y + middlePos.y) / 2 - 40
+                };
+
+                const palmDist = Math.hypot(middlePos.x - wristPos.x, middlePos.y - wristPos.y);
+                const noise = Math.sin(globalTime * 0.1) * 4 + Math.cos(globalTime * 0.15) * 3;
+                const radius = Math.max(palmDist * 1.2, 60) + noise;
+
+                // 1. Ambient Glow (Bloom Effect using Shadow API)
+                canvasCtx.shadowBlur = 40;
+                canvasCtx.shadowColor = 'cyan';
+
+                const gradient = canvasCtx.createRadialGradient(palmCenter.x, palmCenter.y, 0, palmCenter.x, palmCenter.y, radius * 3);
+                gradient.addColorStop(0, 'rgba(100, 200, 255, 0.4)');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                canvasCtx.fillStyle = gradient;
+                canvasCtx.beginPath();
+                canvasCtx.arc(palmCenter.x, palmCenter.y, radius * 3, 0, Math.PI * 2);
+                canvasCtx.fill();
+
+                // 2. Outer Shell
+                canvasCtx.beginPath();
+                canvasCtx.arc(palmCenter.x, palmCenter.y, radius, 0, Math.PI * 2);
+                canvasCtx.strokeStyle = 'rgba(255, 180, 50, 0.6)';
+                canvasCtx.lineWidth = 2;
+                canvasCtx.stroke();
+
+                // 3. Orbital Streams
+                streams.forEach(stream => stream.draw(canvasCtx, palmCenter.x, palmCenter.y, radius));
+
+                // 4. Volatile Sparks
+                if (sparks.length < 30) sparks.push(new ChakraSpark(palmCenter.x, palmCenter.y, radius));
+                sparks.forEach(spark => spark.updateAndDraw(canvasCtx, palmCenter.x, palmCenter.y, radius));
+
+                // 5. Chaotic Core
+                const coreR = Math.max(radius * 0.25, 5);
+                const jitterX = (Math.random() - 0.5) * 6;
+                const jitterY = (Math.random() - 0.5) * 6;
+
+                canvasCtx.shadowBlur = 20;
+                canvasCtx.shadowColor = 'white';
+                canvasCtx.beginPath();
+                canvasCtx.arc(palmCenter.x + jitterX, palmCenter.y + jitterY, coreR, 0, Math.PI * 2);
+                canvasCtx.fillStyle = 'white';
+                canvasCtx.fill();
+            }
+        }
+        canvasCtx.restore();
+        globalTime++;
+    }
+
+    // --- Initialize MediaPipe ---
+    const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.5
+    });
+    hands.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+        onFrame: async () => {
+            await hands.send({image: videoElement});
+        },
+        width: 1280,
+        height: 720
+    });
+    camera.start();
+</script>
+</body>
+</html>
